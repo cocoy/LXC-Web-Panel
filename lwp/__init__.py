@@ -12,6 +12,8 @@ from lwp.lxclite import exists, stopped
 from lwp.lxclite import lxcdir
 from lwp.utils import cgroup_ext
 
+SESSION_SECRET_FILE = '/etc/lwp/session_secret'
+
 
 class FakeSection(object):
     def __init__(self, fp):
@@ -237,7 +239,7 @@ def get_container_settings(name, status=None):
 
     # if ipv4 is unset try to determinate it
     if cfg['ipv4'] == '' and status == 'RUNNING':
-        cmd = ['lxc-ls --fancy --fancy-format name,ipv4|grep -w \'%s\' | awk \'{ print $2 }\'' % name]
+        cmd = ['lxc-ls --fancy --fancy-format name,ipv4|grep -w \'%s\\s\' | awk \'{ print $2 }\'' % name]
         try:
             cfg['ipv4'] = subprocess.check_output(cmd, shell=True)
         except subprocess.CalledProcessError:
@@ -302,9 +304,10 @@ def push_config_value(key, value, container=None):
                 read = load.readlines()
 
             while i < len(read):
-                if not read[i].startswith('#') and \
-                        re.match('lxc.cgroup.devices.deny|lxc.cgroup.devices.allow|lxc.mount.entry|lxc.cap.drop', read[i]):
-                    values.append(read[i])
+                if not read[i].startswith('#'):
+                    if not (read[i] in values):
+                        if re.match('lxc.cgroup.devices.deny|lxc.cgroup.devices.allow|lxc.mount.entry|lxc.cap.drop', read[i]):
+                            values.append(read[i])
                 i += 1
             return values
 
@@ -322,9 +325,14 @@ def push_config_value(key, value, container=None):
             config.set('DEFAULT', key, value)
 
         # Bugfix (can't duplicate keys with config parser)
-        if config.has_option('DEFAULT', cgroup_ext['deny'][0]) or config.has_option('DEFAULT', cgroup_ext['allow'][0]):
+        if config.has_option('DEFAULT', cgroup_ext['deny'][0]):
             config.remove_option('DEFAULT', cgroup_ext['deny'][0])
+        if config.has_option('DEFAULT', cgroup_ext['allow'][0]):
             config.remove_option('DEFAULT', cgroup_ext['allow'][0])
+        if config.has_option('DEFAULT', 'lxc.cap.drop'):
+            config.remove_option('DEFAULT', 'lxc.cap.drop')
+        if config.has_option('DEFAULT', 'lxc.mount.entry'):
+            config.remove_option('DEFAULT', 'lxc.mount.entry')
 
         with open(filename, 'wb') as configfile:
             config.write(configfile)

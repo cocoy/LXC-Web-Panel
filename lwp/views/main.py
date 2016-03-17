@@ -11,11 +11,12 @@ from flask import Blueprint, request, session, g, redirect, url_for, abort, rend
 
 import lwp
 import lwp.lxclite as lxc
-from lwp.utils import query_db, if_logged_in, get_bucket_token, hash_passwd, config, cgroup_ext
+from lwp.utils import query_db, if_logged_in, get_bucket_token, hash_passwd, read_config_file, cgroup_ext
 from lwp.views.auth import AUTH
 
 # TODO: see if we can move this block somewhere better
 try:
+    config = read_config_file()
     USE_BUCKET = config.getboolean('global', 'buckets')
     BUCKET_HOST = config.get('buckets', 'buckets_host')
     BUCKET_PORT = config.get('buckets', 'buckets_port')
@@ -56,10 +57,11 @@ def home():
             'status': status.lower(),
             'containers': containers_by_status
         })
+        clonable_containers = listx['STOPPED']
 
     return render_template('index.html', containers=lxc.ls(), containers_all=containers_all, dist=lwp.name_distro(),
                            host=socket.gethostname(), templates=lwp.get_templates_list(), storage_repos=storage_repos,
-                           auth=AUTH)
+                           auth=AUTH, clonable_containers=clonable_containers)
 
 
 @mod.route('/about')
@@ -118,7 +120,10 @@ def edit(container=None):
     regex = {}
     for k, v in cgroup_ext.items():
         regex[k] = v[1]
-    return render_template('edit.html', containers=lxc.ls(), container=container, infos=infos, settings=cfg, host_memory=host_memory, storage_repos=storage_repos, regex=regex)
+
+    return render_template('edit.html', containers=lxc.ls(), container=container, infos=infos,
+                           settings=cfg, host_memory=host_memory, storage_repos=storage_repos, regex=regex,
+                           clonable_containers=lxc.listx()['STOPPED'])
 
 
 @mod.route('/settings/lxc-net', methods=['POST', 'GET'])
@@ -186,11 +191,8 @@ def lwp_users():
     if session['su'] != 'Yes':
         return abort(403)
 
-    if AUTH == 'ldap':
-        return abort(403, 'You are using ldap as AUTH backend.')
-
-    if AUTH == 'htpasswd':
-        return abort(403, 'You are using htpasswd as AUTH backend.')
+    if AUTH != 'database':
+        return abort(403, 'You are using an auth method other that database.')
 
     try:
         trash = request.args.get('trash')
@@ -489,7 +491,7 @@ def create_container():
                     storage_options += ' --vgname %s' % vgname
                 if re.match('^[a-z0-9]+$', fstype) and fstype != '':
                     storage_options += ' --fstype %s' % fstype
-                if re.match('^[0-9][G|M]$', fssize) and fssize != '':
+                if re.match('^[0-9]+[G|M]$', fssize) and fssize != '':
                     storage_options += ' --fssize %s' % fssize
 
                 try:
@@ -576,13 +578,14 @@ def backup_container():
                 sr_path = sr[1]
                 break
 
-        out = None
+        backup_failed = True
 
         try:
             backup_file = lxc.backup(container=container, sr_type=sr_type, destination=sr_path)
             bucket_token = get_bucket_token(container)
             if push and bucket_token and USE_BUCKET:
                     os.system('curl http://{}:{}/{} -F file=@{}'.format(BUCKET_HOST, BUCKET_PORT, bucket_token, backup_file))
+            backup_failed = False
         except lxc.ContainerDoesntExists:
             flash(u'The Container %s does not exist !' % container, 'error')
         except lxc.DirectoryDoesntExists:
@@ -594,9 +597,9 @@ def backup_container():
         except:
             flash(u'Error during transfert !', 'error')
 
-        if out == 0:
+        if backup_failed is not True:
             flash(u'Container %s backed up successfully' % container, 'success')
-        elif out != 0:
+        else:
             flash(u'Failed to backup %s container' % container, 'error')
 
     return redirect(url_for('main.home'))

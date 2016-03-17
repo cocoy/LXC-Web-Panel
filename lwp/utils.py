@@ -1,7 +1,5 @@
 import sys
-import hmac
 import time
-import crypt
 import hashlib
 import sqlite3
 import ConfigParser
@@ -17,7 +15,7 @@ cgroup_ext is a data structure where for each input of edit.html we have an arra
 """
 ip_regex = '^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])$'
 cidr_regex = '^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\/(\d|[1-2]\d|3[0-2]))*$'
-file_match = '^\/\w[\w.-/]+$'
+file_match = '^\/\w[\w.\/-]+$'
 
 cgroup_ext = {
     'arch': ['lxc.arch', '^(x86|i686|x86_64|amd64)$', ''],
@@ -32,7 +30,7 @@ cgroup_ext = {
     'ipv6gw': ['lxc.network.ipv6.gateway', '^([0-9a-fA-F:]+)+$', 'IPv6 gateway address updated'],
     'script_up': ['lxc.network.script.up', file_match, 'Network script down updated'],
     'script_down': ['lxc.network.script.down', file_match, 'Network script down updated'],
-    'rootfs': ['lxc.rootfs', '^(\/|overlayfs:\/)[\w.-\/:]+$', 'Rootfs updated'],
+    'rootfs': ['lxc.rootfs', '^(\/|loop:\/|overlayfs:\/)[\w.\/:-]+$', 'Rootfs updated'],
     'memlimit': ['lxc.cgroup.memory.limit_in_bytes', '^([0-9]+|)$', 'Memory limit updated'],
     'swlimit': ['lxc.cgroup.memory.memsw.limit_in_bytes', '^([0-9]+|)$', 'Swap limit updated'],
     'cpus': ['lxc.cgroup.cpuset.cpus', '^[0-9,-]+$', 'CPUs updated'],
@@ -57,18 +55,21 @@ cgroup_ext = {
 # configuration
 config = ConfigParser.SafeConfigParser()
 
-try:
-    # TODO: should really use with statement here rather than rely on cpython reference counting
-    config.readfp(open('/etc/lwp/lwp.conf'))
-except:
-    # TODO: another blind exception
-    print(' * missed /etc/lwp/lwp.conf file')
+
+def read_config_file():
     try:
-        # fallback on local config file
-        config.readfp(open('lwp.conf'))
+        # TODO: should really use with statement here rather than rely on cpython reference counting
+        config.readfp(open('/etc/lwp/lwp.conf'))
     except:
-        print(' * cannot read config files. Exit!')
-        sys.exit(1)
+        # TODO: another blind exception
+        print(' * missed /etc/lwp/lwp.conf file')
+        try:
+            # fallback on local config file
+            config.readfp(open('lwp.conf'))
+        except:
+            print(' * cannot read config files. Exit!')
+            sys.exit(1)
+    return config
 
 
 def connect_db(db_path):
@@ -93,7 +94,12 @@ def if_logged_in(function=render_template, f_args=('login.html', )):
             if 'logged_in' in session:
                 return handler(*args, **kwargs)
             else:
-                return function(*f_args)
+                token = request.headers.get('Private-Token')
+                result = query_db('select * from api_tokens where token=?', [token], one=True)
+                if result is not None:
+                    # token exists, access granted
+                    return handler(*args, **kwargs)
+            return function(*f_args)
         new_handler.func_name = handler.func_name
         return new_handler
     return decorator
@@ -154,22 +160,3 @@ def api_auth():
         new_handler.func_name = handler.func_name
         return new_handler
     return decorator
-
-
-def check_htpasswd(htpasswd_file, username, password):
-    htuser = None
-
-    lines = open(htpasswd_file, 'r').readlines()
-    for line in lines:
-        htuser, htpasswd = line.split(':')
-        htpasswd = htpasswd.rstrip('\n')
-        if username == htuser:
-            break
-
-    if htuser is None:
-        return False
-    else:
-        if sys.version_info < (2, 7, 7):
-            return crypt.crypt(password, htpasswd) == htpasswd
-        else:
-            return hmac.compare_digest(crypt.crypt(password, htpasswd), htpasswd)

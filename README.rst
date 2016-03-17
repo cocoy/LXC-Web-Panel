@@ -18,16 +18,15 @@ On ubuntu 12.04 you should install:
 Installation on deb based system
 ------------------------------------
 
-You can download latest debian packages from http://claudyus.github.io/LXC-Web-Panel/download.html or, better, you can also use the lwp debian repo:
+The latest debian packages are released using packagecloud.io service since version 0.9, please update your repo config.
+The install script can be found at https://packagecloud.io/claudyus/LXC-Web-Panel/install
 
-::
+Installation of the package can be done typing::
 
-  wget -O - http://claudyus.github.io/LXC-Web-Panel/claudyus.gpg.key | sudo apt-key add -
-  echo "deb http://claudyus.github.io/LXC-Web-Panel/ debian/" | sudo tee /etc/apt/sources.list.d/lwp.list
-  sudo apt-get update
   sudo apt-get install lwp
 
-Note: you can also include the debian-testing repo inside your source.list file to receive release candidate build.
+Version released before 0.9 can be downloaded at http://claudyus.github.io/LXC-Web-Panel/download.html
+
 
 Installation on rpm system or from source code
 ----------------------------------------------
@@ -63,7 +62,7 @@ Configuration
 2. edit it
 3. start lwp service as root ``service lwp start``
 
-Your lwp panel is not at http://localhost:5000/ and default username and password are admin/admin.
+Your lwp panel is now at http://localhost:5000/ and default username and password are admin/admin.
 
 SSL configuration
 ^^^^^^^^^^^^^^^^^
@@ -120,6 +119,11 @@ or
 With default ``login`` service all valid linux users can login to lwp.
 Many more options are available via PAM Configuration, see PAM docs.
 
+HTTP
++++++
+
+This auth method is used to authenticate the users using an external http server through a POST request. To enable this method  ``auth`` type to ``http`` and configure the option under ``http`` section.
+
 Custom autenticators
 ++++++++++++++++++++
 
@@ -158,6 +162,10 @@ Debug is just one of the available options to profile lwp you can use ``--profil
 used against the global installation using: ``sudo lwp --debug``
 
 Anyway ensure to stop the lwp service if any: ``sudo service lwp stop``
+
+To run test locally unsure that mock-lxc scripts are in PATH (``export PATH=`pwd`/tests/mock-lxc:$PATH``) than run ``fab dev_test``
+
+To build a local debian package run ``fab debian``
 
 LICENSE
 -------

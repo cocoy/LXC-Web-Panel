@@ -66,12 +66,12 @@ def debian():
     package = 'lwp_{}_all.deb'.format(version)
 
     # finally, move package into gh-pages dir
-    target = 'debian-testing' if 'rc' in version else 'debian'
-    local('sudo mv ../{} gh-pages/{}/'.format(package, target))
+    local('sudo mv ../{} gh-pages/debian/'.format(package))
     local('sudo rm ../lwp_*.changes')
-    if (os.environ['USER'] == 'claudyus'):
-        local('sudo dpkg-sig -k 0DFD7CBB --sign builder gh-pages/{}/{}'.format(target, package))
 
+    # release package on packagecloud.io
+    local('package_cloud push claudyus/LXC-Web-Panel/ubuntu/precise gh-pages/debian/{}'.format(package))
+    local('package_cloud push claudyus/LXC-Web-Panel/ubuntu/trusty gh-pages/debian/{}'.format(package))
 
 @task
 def clone():
@@ -120,3 +120,11 @@ def clean_jsbuild():
 def clean():
     clean_jsbuild()
     clean_assets()
+
+@task
+def dev_test():
+    local('flake8 --ignore=E501,E402 lwp/ bin/lwp')
+    for test_file in ['auth', 'api', 'browser', 'lxc_lite', 'mock_lxc']:
+        local('nosetests --cover-package=lwp --with-coverage tests/{}.py'.format(test_file))
+        local('mv .coverage .coverage.{}'.format(test_file))
+    local('coverage combine')
